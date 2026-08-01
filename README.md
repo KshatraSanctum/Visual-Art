@@ -5,6 +5,7 @@ An browser-based interactive computer vision suite that maps real-time hand-trac
 ---
 
 ## 🏗️ Architectural Overview & Technical Stack
+```bash
 ┌─────────────────────────────┐        ┌──────────────────────────────┐        ┌─────────────────────────────┐
 │  Google MediaPipe Hands     │───────►│  Real-Time Coordinate Map    │───────►│  Three.js WebGL Renderer    │
 │  (Landmark Estimation)      │        │  (Kinematic Calculations)    │        │  (Particle Shader Pipeline) │
@@ -12,6 +13,7 @@ An browser-based interactive computer vision suite that maps real-time hand-trac
 * **Core Engine:** JavaScript (ES6+), Three.js (WebGL 3D Rendering & Additive Blending Shaders)
 * **Computer Vision Pipeline:** Google MediaPipe Hands (Real-time hand landmark estimation and joint vector tracking)
 * **Mathematical Modeling:** Custom procedural generation algorithms mapping parametric equations directly to buffer geometries
+```
 
 ---
 
