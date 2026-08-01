@@ -1,6 +1,6 @@
 # 🌌 Project Visual-Art: Real-Time Computer Vision & Volumetric Procedural Particle Engine
 
-An elite-grade, browser-based interactive computer vision suite that maps real-time hand-tracking telemetry into high-density volumetric 3D particle systems. Inspired by advanced TouchDesigner workflows, this engine combines mathematical procedural modeling with client-side WebGL shaders and computer vision algorithms.
+An browser-based interactive computer vision suite that maps real-time hand-tracking telemetry into high-density volumetric 3D particle systems. Inspired by advanced TouchDesigner workflows, this engine combines mathematical procedural modeling with client-side WebGL shaders and computer vision algorithms.
 
 ---
 
