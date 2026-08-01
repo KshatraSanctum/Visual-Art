@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Art - Golden Plasma Core & Snap Disintegration</title>
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas, .input_video { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            object-fit: cover; 
+        }
+        .input_video { display: none; }
+        #status-hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #ffaa00;
+            font-family: monospace;
+            font-size: 16px;
+            z-index: 10;
+            pointer-events: none;
+            background: rgba(20, 10, 0, 0.7);
+            padding: 12px 18px;
+            border-radius: 6px;
+            border: 1px solid #ffaa00;
+            text-shadow: 0 0 8px #ff5500;
+        }
+    </style>
+
+    <!-- MediaPipe & Three.js CDNs -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="status-hud">Initializing Plasma Core...<br>Use both hands to scale size.<br>Snap fingers to trigger 5s disintegration.</div>
+    <video class="input_video" autoplay></video>
+    <canvas class="output_canvas"></canvas>
+
+    <script>
+        const videoElement = document.getElementsByClassName('input_video')[0];
+        const canvasElement = document.getElementsByClassName('output_canvas')[0];
+        const hud = document.getElementById('status-hud');
+
+        // --- THREE.JS SCENE SETUP ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+
+        let renderer;
+        try {
+            renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true, antialias: true, failIfMajorPerformanceCaveat: false });
+        } catch (e) {
+            const glContext = canvasElement.getContext('webgl');
+            renderer = new THREE.WebGLRenderer({ canvas: canvasElement, context: glContext, alpha: true });
+        }
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        // --- 1. GOLDEN CORE & GEOMETRIC RINGS ---
+        const coreGroup = new THREE.Group();
+        scene.add(coreGroup);
+
+        // Inner Bright Plasma Sun
+        const sunGeo = new THREE.SphereGeometry(0.5, 32, 32);
+        const sunMat = new THREE.MeshBasicMaterial({ color: 0xffdd44 });
+        const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+        coreGroup.add(sunMesh);
+
+        // Intricate Wireframe Inner Sphere (like your reference image)
+        const innerWireGeo = new THREE.IcosahedronGeometry(1.0, 2);
+        const innerWireMat = new THREE.MeshBasicMaterial({ color: 0xff7700, wireframe: true, transparent: true, opacity: 0.6 });
+        const innerWireMesh = new THREE.Mesh(innerWireGeo, innerWireMat);
+        coreGroup.add(innerWireMesh);
+
+        // Orbital Plasma Rings
+        const ringMat1 = new THREE.MeshBasicMaterial({ color: 0xff5500, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
+        const ring1 = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.03, 16, 100), ringMat1);
+        ring1.rotation.x = Math.PI / 3;
+        coreGroup.add(ring1);
+
+        const ringMat2 = new THREE.MeshBasicMaterial({ color: 0xffaa00, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
+        const ring2 = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.02, 16, 100), ringMat2);
+        ring2.rotation.y = Math.PI / 4;
+        coreGroup.add(ring2);
+
+        // --- 2. DENSE ORBITAL DUST PARTICLES ---
+        const particleCount = 5000;
+        const particleGeo = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3); // For the 5s snap dispersal
+
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            const radius = 1.2 + Math.random() * 1.5;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos((Math.random() * 2) - 1);
+
+            positions[i]     = radius * Math.sin(phi) * Math.cos(theta);
+            positions[i + 1] = radius * Math.sin(phi) * Math.sin(theta);
+            positions[i + 2] = radius * Math.cos(phi);
+
+            // Assign random outward flight directions for the snap effect
+            velocities[i]     = (Math.random() - 0.5) * 0.04;
+            velocities[i + 1] = (Math.random() - 0.5) * 0.04 + 0.02; // Slight upward drift
+            velocities[i + 2] = (Math.random() - 0.5) * 0.04;
+        }
+
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const particleMat = new THREE.PointsMaterial({
+            color: 0xffaa22,
+            size: 0.035,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending
+        });
+        const particleSystem = new THREE.Points(particleGeo, particleMat);
+        coreGroup.add(particleSystem);
+
+        // --- INTERACTION & DISINTEGRATION STATES ---
+        let targetPos = { x: 0, y: 0 };
+        let targetScale = 1.0;
+        let isDisintegrating = false;
+        let disintegrateTimer = 0; // Tracks the 5-second window
+        const DISINTEGRATE_DURATION = 5.0; // Exactly 5 seconds
+
+        // --- MEDIAPIPE HAND TRACKING ---
+        const handsTracker = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        handsTracker.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+        handsTracker.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                
+                // If two hands are present, calculate midpoint and distance for scaling
+                if (results.multiHandLandmarks.length >= 2) {
+                    const h1 = results.multiHandLandmarks[0][9];
+                    const h2 = results.multiHandLandmarks[1][9];
+
+                    const h1x = (1 - h1.x) * window.innerWidth;
+                    const h1y = h1.y * window.innerHeight;
+                    const h2x = (1 - h2.x) * window.innerWidth;
+                    const h2y = h2.y * window.innerHeight;
+
+                    targetPos.x = ((h1x + h2x) / 2 - window.innerWidth / 2) * 0.005;
+                    targetPos.y = -((h1y + h2y) / 2 - window.innerHeight / 2) * 0.005;
+
+                    const handDist = Math.hypot(h2x - h1x, h2y - h1y);
+                    targetScale = Math.max(0.4, Math.min(3.0, handDist / 250));
+                } else {
+                    // Single hand follow
+                    const palm = results.multiHandLandmarks[0][9];
+                    targetPos.x = (1 - palm.x - 0.5) * -4;
+                    targetPos.y = -(palm.y - 0.5) * 3;
+                }
+
+                // CHECK FOR FINGER SNAP GESTURE (Thumb tip 4 touching Middle finger tip 12)
+                const primaryHand = results.multiHandLandmarks[0];
+                const thumbTip = primaryHand[4];
+                const middleTip = primaryHand[12];
+                const snapDist = Math.hypot(thumbTip.x - middleTip.x, thumbTip.y - middleTip.y);
+
+                if (snapDist < 0.04 && !isDisintegrating) {
+                    isDisintegrating = true;
+                    disintegrateTimer = 0.0; // Reset 5-second clock
+                }
+
+                hud.innerHTML = `<strong>Status:</strong> ${isDisintegrating ? 'Disintegrating (5s Sequence)' : 'Active Plasma Core'}<br>` +
+                                `Scale: ${targetScale.toFixed(2)}x`;
+            } else {
+                hud.innerHTML = "<strong>Bring hands into frame</strong><br>Use both hands to scale size.<br>Snap fingers to vanish in 5s.";
+            }
+        });
+
+        const cam = new Camera(videoElement, {
+            onFrame: async () => { await handsTracker.send({ image: videoElement }); },
+            width: 1280, height: 720
+        });
+        cam.start();
+
+        // --- ANIMATION & 5-SECOND VANISHING LOOP ---
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const elapsedTime = clock.getElapsedTime();
+
+            // Smooth core positioning and scaling
+            coreGroup.position.x += (targetPos.x - coreGroup.position.x) * 0.1;
+            coreGroup.position.y += (targetPos.y - coreGroup.position.y) * 0.1;
+
+            // Continuous rotation for plasma effect
+            innerWireMesh.rotation.x += 0.01;
+            innerWireMesh.rotation.y += 0.015;
+            ring1.rotation.z += 0.02;
+            ring2.rotation.z -= 0.025;
+
+            if (isDisintegrating) {
+                disintegrateTimer += delta;
+                const progress = disintegrateTimer / DISINTEGRATE_DURATION; // 0.0 to 1.0 over 5 seconds
+
+                // Fade out opacities smoothly over 5 seconds
+                const currentOpacity = Math.max(0, 1.0 - progress);
+                sunMat.opacity = currentOpacity;
+                innerWireMat.opacity = currentOpacity * 0.6;
+                ringMat1.opacity = currentOpacity * 0.8;
+                ringMat2.opacity = currentOpacity * 0.8;
+                particleMat.opacity = currentOpacity * 0.9;
+
+                // Disperse particles outward
+                const posArr = particleGeo.attributes.position.array;
+                for (let i = 0; i < particleCount * 3; i += 3) {
+                    posArr[i]     += velocities[i] * 2.0;
+                    posArr[i + 1] += velocities[i + 1] * 2.0;
+                    posArr[i + 2] += velocities[i + 2] * 2.0;
+                }
+                particleGeo.attributes.position.needsUpdate = true;
+
+                // After 5 seconds complete, reset everything back to normal state
+                if (disintegrateTimer >= DISINTEGRATE_DURATION) {
+                    isDisintegrating = false;
+                    sunMat.opacity = 1.0;
+                    innerWireMat.opacity = 0.6;
+                    ringMat1.opacity = 0.8;
+                    ringMat2.opacity = 0.8;
+                    particleMat.opacity = 0.9;
+                    
+                    // Reset particle positions back to orbit core
+                    for (let i = 0; i < particleCount * 3; i += 3) {
+                        const radius = 1.2 + Math.random() * 1.5;
+                        const theta = Math.random() * Math.PI * 2;
+                        const phi = Math.acos((Math.random() * 2) - 1);
+                        posArr[i]     = radius * Math.sin(phi) * Math.cos(theta);
+                        posArr[i + 1] = radius * Math.sin(phi) * Math.sin(theta);
+                        posArr[i + 2] = radius * Math.cos(phi);
+                    }
+                    particleGeo.attributes.position.needsUpdate = true;
+                }
+            } else {
+                // Normal scaling response to hands
+                const currentScale = coreGroup.scale.x + (targetScale - coreGroup.scale.x) * 0.1;
+                coreGroup.scale.set(currentScale, currentScale, currentScale);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>

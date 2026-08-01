@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Art - Elite TouchDesigner Morphing Meshes</title>
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas, .input_video { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            object-fit: cover; 
+        }
+        .input_video { display: none; }
+        #ui-text {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ffff;
+            font-family: monospace;
+            font-size: 18px;
+            z-index: 10;
+            pointer-events: none;
+            text-shadow: 0 0 5px #00ffff;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #00ffff;
+        }
+    </style>
+
+    <!-- MediaPipe & Three.js CDNs -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="ui-text">
+        <strong>Tracking Initialization...</strong><br><br>
+        🤚 <strong>Left Hand:</strong> Move & Scale Box<br>
+        🤏 <strong>Right Hand:</strong> Pinch to Swap Mesh
+    </div>
+    
+    <video class="input_video" autoplay></video>
+    <canvas class="output_canvas"></canvas>
+
+    <script>
+        const videoElement = document.getElementsByClassName('input_video')[0];
+        const canvasElement = document.getElementsByClassName('output_canvas')[0];
+        const uiText = document.getElementById('ui-text');
+
+        // --- THREE.JS SCENE SETUP ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+
+        let renderer;
+        try {
+            renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true, antialias: true, failIfMajorPerformanceCaveat: false });
+        } catch (e) {
+            const glContext = canvasElement.getContext('webgl');
+            renderer = new THREE.WebGLRenderer({ canvas: canvasElement, context: glContext, alpha: true });
+        }
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const boxGeometry = new THREE.BoxGeometry(2.2, 2.2, 2.2);
+        const wireframe = new THREE.WireframeGeometry(boxGeometry);
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 });
+        const boundingBox = new THREE.LineSegments(wireframe, lineMaterial);
+        scene.add(boundingBox);
+
+        const particleCount = 12000;
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const targetPositions = new Float32Array(particleCount * 3); 
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const material = new THREE.PointsMaterial({ 
+            color: 0x00ffff, 
+            size: 0.025, 
+            transparent: true, 
+            opacity: 0.8, 
+            blending: THREE.AdditiveBlending 
+        });
+        const particleMesh = new THREE.Points(geometry, material);
+        scene.add(particleMesh);
+
+        // --- COMPLEX PROCEDURAL SHAPE GENERATORS (1 to 9) ---
+        const shapes = [
+            {
+                name: "1. DNA Helix",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let y = (Math.random() - 0.5) * 3.0; 
+                        let t = y * Math.PI * 3; // Turns
+                        if (Math.random() < 0.7) { // Backbones
+                            let strand = Math.random() > 0.5 ? 0 : Math.PI;
+                            targetPositions[i] = Math.cos(t + strand) * 0.6 + (Math.random()-0.5)*0.1;
+                            targetPositions[i+1] = y;
+                            targetPositions[i+2] = Math.sin(t + strand) * 0.6 + (Math.random()-0.5)*0.1;
+                        } else { // Rungs
+                            let r = (Math.random() - 0.5) * 1.2;
+                            let step = Math.floor(y * 10) / 10; 
+                            let tStep = step * Math.PI * 3;
+                            targetPositions[i] = r * Math.cos(tStep) + (Math.random()-0.5)*0.05;
+                            targetPositions[i+1] = step + (Math.random()-0.5)*0.05;
+                            targetPositions[i+2] = r * Math.sin(tStep) + (Math.random()-0.5)*0.05;
+                        }
+                    }
+                }
+            },
+            {
+                name: "2. Butterfly",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let t = Math.random() * Math.PI * 24;
+                        let e = Math.exp(Math.cos(t)) - 2 * Math.cos(4 * t) + Math.pow(Math.sin(t / 12), 5);
+                        targetPositions[i] = Math.sin(t) * e * 0.25;
+                        targetPositions[i+1] = Math.cos(t) * e * 0.25;
+                        targetPositions[i+2] = (Math.random() - 0.5) * 0.2; 
+                    }
+                }
+            },
+            {
+                name: "3. Skull (Hollow Shell)",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let x, y, z, valid = false;
+                        while (!valid) {
+                            let u = Math.random() * Math.PI * 2;
+                            let v = Math.acos(2 * Math.random() - 1);
+                            x = Math.sin(v) * Math.cos(u);
+                            y = Math.cos(v);
+                            z = Math.sin(v) * Math.sin(u);
+                            
+                            // Shape the Jaw vs Cranium
+                            if (y < -0.1) {
+                                x *= 0.65; // Narrow jaw
+                                z *= 0.8;  // Flat jaw depth
+                                if (y < -0.7) continue; // Cut off neck
+                            } else {
+                                y *= 0.95; // Flatten top dome
+                                z *= 1.15; // Elongate back of head
+                            }
+
+                            // Carve out face details
+                            if (z > 0.4) {
+                                // Eye sockets
+                                if ((Math.pow(x + 0.25, 2) + Math.pow(y - 0.15, 2)) < 0.05) continue;
+                                if ((Math.pow(x - 0.25, 2) + Math.pow(y - 0.15, 2)) < 0.05) continue;
+                                // Nose cavity
+                                if (Math.abs(x) < 0.1 && y > -0.25 && y < 0.0) continue;
+                                // Cheekbone hollows
+                                if (Math.abs(x) > 0.3 && y < -0.1 && y > -0.5) continue;
+                                // Mouth / Teeth slit
+                                if (Math.abs(x) < 0.3 && Math.abs(y + 0.45) < 0.03) continue;
+                            }
+                            valid = true;
+                        }
+                        // Create a hollow shell thickness
+                        let thickness = 0.85 + Math.random() * 0.15;
+                        targetPositions[i] = x * thickness;
+                        targetPositions[i+1] = y * thickness;
+                        targetPositions[i+2] = z * thickness;
+                    }
+                }
+            },
+            {
+                name: "4. Jellyfish",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        if (Math.random() < 0.4) { // Dome
+                            let u = Math.random() * Math.PI * 2;
+                            let v = Math.random() * Math.PI / 2; 
+                            let r = 0.8 + (Math.random() * 0.1);
+                            targetPositions[i] = r * Math.sin(v) * Math.cos(u);
+                            targetPositions[i+1] = r * Math.cos(v) + 0.2;
+                            targetPositions[i+2] = r * Math.sin(v) * Math.sin(u);
+                        } else { // Tentacles
+                            let angle = Math.random() * Math.PI * 2;
+                            let radius = Math.random() * 0.6;
+                            let drop = Math.random() * 2.5; 
+                            targetPositions[i] = Math.cos(angle) * radius + Math.sin(drop * 4 + angle) * 0.15;
+                            targetPositions[i+1] = 0.2 - drop;
+                            targetPositions[i+2] = Math.sin(angle) * radius + Math.cos(drop * 4 + angle) * 0.15;
+                        }
+                    }
+                }
+            },
+            {
+                name: "5. Tree",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let p = Math.random();
+                        if (p < 0.7) { // Canopy
+                            let u = Math.random() * Math.PI * 2;
+                            let v = Math.acos(2 * Math.random() - 1);
+                            let r = 0.7 + Math.random() * 0.5; 
+                            targetPositions[i] = r * Math.sin(v) * Math.cos(u);
+                            targetPositions[i+1] = r * Math.cos(v) + 0.6;
+                            targetPositions[i+2] = r * Math.sin(v) * Math.sin(u);
+                        } else { // Trunk
+                            let h = (Math.random() - 0.5) * 2;
+                            let taper = 0.15 * (1.5 - (h + 1)/2); 
+                            let ang = Math.random() * Math.PI * 2;
+                            targetPositions[i] = taper * Math.cos(ang) + (Math.random()-0.5)*0.05;
+                            targetPositions[i+1] = h - 0.4;
+                            targetPositions[i+2] = taper * Math.sin(ang) + (Math.random()-0.5)*0.05;
+                        }
+                    }
+                }
+            },
+            {
+                name: "6. Whale",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let p = Math.random(), x, y, z;
+                        if (p < 0.8) { // Torso
+                            x = (Math.random() - 0.5) * 3.0; // Head(-1.5) to Tail(+1.5)
+                            let normX = x / 1.5; 
+                            
+                            // Tapering: Thick head, thin tail
+                            let girth = 0.45 * Math.sqrt(Math.max(0, 1 - normX * normX)) * (1 - normX * 0.3);
+                            
+                            let ang = Math.random() * Math.PI * 2;
+                            let r = girth * (0.6 + Math.random() * 0.4); // Hollower center for clear skin definition
+                            
+                            y = r * Math.sin(ang) * 0.8 + (1 - normX*normX) * 0.15; // Arched back
+                            z = r * Math.cos(ang);
+                        } else if (p < 0.9) { // Tail Flukes
+                            x = 1.35 + Math.random() * 0.3; 
+                            z = (Math.random() - 0.5) * 1.2; 
+                            y = (Math.random() - 0.5) * 0.05; 
+                        } else if (p < 0.97) { // Pectoral Fins
+                            let side = Math.random() > 0.5 ? 1 : -1;
+                            x = -0.5 + (Math.random() - 0.5) * 0.4; 
+                            z = side * (0.3 + Math.random() * 0.8); 
+                            y = -0.25 + (Math.random() - 0.5) * 0.05; 
+                        } else { // Dorsal Fin
+                            x = 0.6 + (Math.random() - 0.5) * 0.2; 
+                            y = 0.35 + Math.random() * 0.25; 
+                            z = (Math.random() - 0.5) * 0.05; 
+                        }
+                        targetPositions[i]=x; targetPositions[i+1]=y; targetPositions[i+2]=z;
+                    }
+                }
+            },
+            {
+                name: "7. Human Hand",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let p = Math.random(), x, y, z;
+                        if(p < 0.35) { // Palm
+                            x = (Math.random() - 0.5) * 0.8; y = (Math.random() - 0.5) * 0.8 - 0.2; z = (Math.random() - 0.5) * 0.15;
+                        } else if(p < 0.5) { // Thumb
+                            x = 0.5 + Math.random() * 0.3; y = -0.2 + Math.random() * 0.4; z = (Math.random() - 0.5) * 0.15;
+                        } else { // Fingers
+                            let finger = Math.floor(Math.random() * 4);
+                            let fx = -0.3 + finger * 0.22;
+                            let fy = 0.2 + Math.random() * 0.7;
+                            if (finger === 1 || finger === 2) fy += 0.15; 
+                            x = fx + (Math.random() - 0.5) * 0.08; y = fy; z = (Math.random() - 0.5) * 0.15;
+                        }
+                        targetPositions[i]=x; targetPositions[i+1]=y; targetPositions[i+2]=z;
+                    }
+                }
+            },
+            {
+                name: "8. Sun",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let u = Math.random() * Math.PI * 2;
+                        let v = Math.acos(2 * Math.random() - 1);
+                        let baseR = 0.7;
+                        let flare = Math.random() > 0.85 ? Math.random() * 0.6 : 0; 
+                        let r = baseR + flare + (Math.random() * 0.1);
+                        
+                        targetPositions[i] = r * Math.sin(v) * Math.cos(u);
+                        targetPositions[i+1] = r * Math.cos(v);
+                        targetPositions[i+2] = r * Math.sin(v) * Math.sin(u);
+                    }
+                }
+            },
+            {
+                name: "9. Nebula",
+                generate: function() {
+                    for(let i=0; i<particleCount*3; i+=3) {
+                        let p = Math.random();
+                        if (p < 0.3) { // Core
+                             targetPositions[i] = (Math.random()-0.5)*0.6; 
+                             targetPositions[i+1] = (Math.random()-0.5)*0.6; 
+                             targetPositions[i+2] = (Math.random()-0.5)*0.6;
+                        } else { // Spirals
+                            let ang = Math.random() * Math.PI * 4;
+                            let r = 0.3 + Math.random() * 1.8;
+                            let arm = Math.random() > 0.5 ? 0 : Math.PI; 
+                            targetPositions[i] = r * Math.cos(ang + arm) + (Math.random()-0.5)*0.4;
+                            targetPositions[i+1] = (Math.random() - 0.5) * 0.5; 
+                            targetPositions[i+2] = r * Math.sin(ang + arm) + (Math.random()-0.5)*0.4;
+                        }
+                    }
+                }
+            }
+        ];
+
+        let currentShapeIndex = 0;
+        shapes[currentShapeIndex].generate(); 
+
+        for(let i=0; i<positions.length; i++) positions[i] = targetPositions[i];
+
+        let boxTargetPos = { x: 0, y: 0, z: 0 };
+        let boxTargetScale = 1.0;
+        let isPinching = false;
+
+        const handsTracker = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        handsTracker.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+        handsTracker.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                let detectedHands = results.multiHandLandmarks.map((marks) => ({ marks: marks, xPos: marks[9].x }));
+                detectedHands.sort((a, b) => b.xPos - a.xPos); 
+
+                const leftHand = detectedHands[0].marks; 
+                const palm = leftHand[9];
+                
+                boxTargetPos.x = (palm.x - 0.5) * -6; 
+                boxTargetPos.y = -(palm.y - 0.5) * 4;
+
+                const span = Math.hypot(leftHand[0].x - leftHand[12].x, leftHand[0].y - leftHand[12].y);
+                boxTargetScale = Math.max(0.4, Math.min(2.5, span * 3.5)); 
+
+                if (detectedHands.length > 1) {
+                    const rightHand = detectedHands[1].marks;
+                    const pinchDist = Math.hypot(rightHand[4].x - rightHand[8].x, rightHand[4].y - rightHand[8].y);
+
+                    if (pinchDist < 0.05) {
+                        if (!isPinching) {
+                            isPinching = true;
+                            currentShapeIndex = (currentShapeIndex + 1) % shapes.length;
+                            shapes[currentShapeIndex].generate();
+                            material.color.setHex(Math.random() * 0xffffff); 
+                            lineMaterial.color.set(material.color);
+                        }
+                    } else {
+                        isPinching = false;
+                    }
+                }
+
+                uiText.innerHTML = `<strong>Active Mesh: <span style="color:#fff">${shapes[currentShapeIndex].name}</span></strong><br>` +
+                                   `Box Scale: ${boxTargetScale.toFixed(2)}x<br>` +
+                                   `Particles: ${particleCount}`;
+            } else {
+                uiText.innerHTML = "<strong>Waiting for hands...</strong><br>🤚 Left Hand = Move & Scale Box<br>🤏 Right Hand Pinch = Change Mesh";
+            }
+        });
+
+        const cam = new Camera(videoElement, {
+            onFrame: async () => { await handsTracker.send({ image: videoElement }); },
+            width: 1280, height: 720
+        });
+        cam.start();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            boundingBox.position.x += (boxTargetPos.x - boundingBox.position.x) * 0.15;
+            boundingBox.position.y += (boxTargetPos.y - boundingBox.position.y) * 0.15;
+            
+            const currentScale = boundingBox.scale.x + (boxTargetScale - boundingBox.scale.x) * 0.15;
+            boundingBox.scale.set(currentScale, currentScale, currentScale);
+            particleMesh.scale.set(currentScale, currentScale, currentScale);
+            particleMesh.position.copy(boundingBox.position);
+
+            boundingBox.rotation.y += 0.01;
+            particleMesh.rotation.y += 0.01;
+
+            const posArray = geometry.attributes.position.array;
+            for (let i = 0; i < particleCount * 3; i++) {
+                posArray[i] += (targetPositions[i] - posArray[i]) * 0.06; 
+            }
+            geometry.attributes.position.needsUpdate = true;
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
